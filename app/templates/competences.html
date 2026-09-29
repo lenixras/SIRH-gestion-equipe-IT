@@ -1,0 +1,95 @@
+{% extends "layout.html" %}
+{% from "_macros.html" import table %}
+{% block title %}Dashboard compétence{% endblock %}
+{% block body %}
+<h1>Dashboard compétence</h1>
+<p class="hint">Tableau et graphiques lisent la MEME requete (<code>f_person_analysis</code>) :
+   interventions du <a class="mini" href="/support">Support</a> (statuts et SLA inclus), tickets
+   importes de GLPI (SLA classe/niveau) et projets. Rien ne peut diverger — et chaque ecriture,
+   d'ou qu'elle vienne (UI, API, MCP, sync GLPI), recharge cet ecran en temps reel.</p>
+
+<form method="get" action="/competences" class="mb-4 flex flex-wrap items-center gap-2">
+  <label class="text-muted" for="period">Analyse :</label>
+  <select id="period" name="period" class="rounded-md border border-line bg-white px-2 py-1" onchange="this.form.submit()">
+    <option value="all" {% if period == 'all' %}selected{% endif %}>tout l'historique</option>
+    <option value="week" {% if period == 'week' %}selected{% endif %}>cette semaine</option>
+    <option value="month" {% if period == 'month' %}selected{% endif %}>ce mois</option>
+    <option value="year" {% if period == 'year' %}selected{% endif %}>cette annee</option>
+    <option value="date" {% if period == 'date' %}selected{% endif %}>une date</option>
+  </select>
+  <label class="text-muted" for="personne">Personne :</label>
+  <input id="personne" name="personne" value="{{ personne }}" list="personnes" type="search"
+         placeholder="rechercher (ex. pri)" autocomplete="off"
+         class="w-44 rounded-md border border-line bg-white px-2 py-1">
+  <datalist id="personnes">{% for p in toutes_personnes %}<option value="{{ p }}">{% endfor %}</datalist>
+  <input type="date" name="d" value="{{ d }}" class="rounded-md border border-line bg-white px-2 py-1">
+  <button class="btn">filtrer</button>
+  {% if period != 'all' or d or personne %}<a class="mini" href="/competences">tout afficher</a>{% endif %}
+</form>
+
+<ul class="mb-4 flex flex-wrap gap-3 p-0">
+  <li class="stat"><b>{{ stats.taches }}</b> taches (support + tickets)</li>
+  <li class="stat"><b>{{ stats.projets_termines }}</b> affectations terminees</li>
+  <li class="stat"><b>{{ stats.effectif }}</b> personnes actives</li>
+  <li class="stat"><b>{{ stats.classes }}</b> classes a l'arborescence</li>
+</ul>
+
+<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+  <section class="panel max-w-none">
+    <h2 class="flex items-center gap-2">Suivi des competences par personne
+      <select id="metrique" class="ml-auto rounded border border-line bg-white px-2 py-1 text-xs">
+        <option value="activity">Activite (support + tickets)</option>
+        <option value="sla">SLA tenu (%)</option>
+        <option value="projets">Realisation projets (%)</option>
+        <option value="escalades">Bloque — Escalade</option>
+      </select></h2>
+    <canvas id="chartPersonnes" height="220"></canvas>
+  </section>
+
+  <section class="panel max-w-none">
+    <h2>Repartition du travail par classe</h2>
+    <canvas id="chartClasses" height="220"></canvas>
+  </section>
+</div>
+
+<h2>Suivi des competences par personne</h2>
+{{ table([("name","Personne"),("total","Cas"),("interventions","Interventions"),("tickets","Tickets"),
+          ("succes_pct","Reussite","pct"),("sla_pct","SLA tenu","pct"),
+          ("escalades","Escalades"),("en_cours","Non soldes"),
+          ("diff_max","Difficulte max"),("progression","Progression","bool"),
+          ("mttr_s","MTTR moyen","dur"),("mttd_s","MTTD moyen","dur"),
+          ("projets","Projets affectes"),("proj_done","Termines"),("proj_pct","Realisation","pct")],
+         analysis) }}
+
+<script src="/static/chart.umd.js"></script>
+<script>
+const D = {{ chart | tojson }};
+const ACTIVITY = [
+  {label: "Support", data: D.support, backgroundColor: "#2f5d8a", stack: "a"},
+  {label: "Tickets", data: D.tickets, backgroundColor: "#6b5b95", stack: "a"}];
+const bar = new Chart(document.getElementById("chartPersonnes"), {
+  type: "bar",
+  data: {labels: D.names, datasets: ACTIVITY},
+  options: {responsive: true, plugins: {legend: {display: true}}}
+});
+new Chart(document.getElementById("chartClasses"), {
+  type: "doughnut",
+  data: {labels: D.classes, datasets: [{data: D.cls_n, backgroundColor: D.cls_colors}]},
+  options: {responsive: true, plugins: {legend: {position: "right"}}}
+});
+const metrics = {
+  sla:       {label: "SLA tenu (%)", data: D.sla, color: "#1c6b3d", pct: true},
+  projets:   {label: "Realisation (%)", data: D.proj, color: "#8a5b2f", pct: true},
+  escalades: {label: "Escalades", data: D.escalades, color: "#a12b2b"},
+};
+document.getElementById("metrique").addEventListener("change", e => {
+  const m = metrics[e.target.value];
+  bar.data.datasets = m ? [{label: m.label, data: m.data, backgroundColor: m.color}] : ACTIVITY;
+  bar.options.scales = m && m.pct ? {y: {beginAtZero: true, max: 100}} : {};
+  bar.update();
+});
+// synchronisation dynamique : un NOTIFY (n'importe quelle ecriture) recharge les donnees
+const es = new EventSource("/events");
+es.onmessage = () => es.close() || location.reload();
+</script>
+{% endblock %}

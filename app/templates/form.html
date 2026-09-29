@@ -1,0 +1,13 @@
+{% extends "layout.html" %}
+{% from "_macros.html" import inputs %}
+{% block title %}{{ spec.title }}{% endblock %}
+{% block body %}
+<h1>{{ 'Modifier' if values.id else 'Nouveau' }} &mdash; {{ spec.title | lower }}</h1>
+<form method="post" action="{{ request.path }}" class="panel max-w-xl">
+  {{ inputs(fields, values) }}
+  <div class="mt-4 flex items-center gap-3">
+    <button class="btn-primary">enregistrer</button>
+    <a class="btn" href="javascript:history.back()">annuler</a>
+  </div>
+</form>
+{% endblock %}

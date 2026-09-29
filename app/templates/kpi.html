@@ -1,0 +1,59 @@
+{% extends "layout.html" %}
+{% from "_macros.html" import table, inputs %}
+{% block title %}Ticketing Result{% endblock %}
+{% block body %}
+<h1>Ticketing Result</h1>
+<p class="hint">Tickets impotes de l'outil de tickets (GLPI). MTTA = prise en charge, MTTR = resolution.
+   Chaque ticket est rapproche d'une classe de l'arborescence (accents ignores : « Réseau » = « Reseau »,
+   MEME base de connaissance que le support) ; son <b>SLA</b> (classe, niveau) est verdi si le MTTR tient,
+   rougi sinon — et un ticket <b>non resolu</b> est evalue en direct : hors delai = rouge, dans les
+   temps = bleu (<a class="mini" href="/categories">grille
+   Categorie</a>).</p>
+{% if summary and summary.total %}
+<ul class="mb-4 flex flex-wrap gap-3 p-0">
+  <li class="stat"><b>{{ summary.total }}</b> tickets importes</li>
+  <li class="stat"><b>{{ summary.resolved }}</b> resolus</li>
+  <li class="stat">MTTA <b>{{ summary.mtta_s | dur }}</b></li>
+  <li class="stat">MTTR <b>{{ summary.mttr_s | dur }}</b></li>
+  <li class="stat">Cycle <b>{{ summary.cycle_s | dur }}</b></li>
+  <li class="stat">dernier import <b>{{ summary.last_import | dt }}</b></li>
+</ul>
+{% else %}<p class="empty">aucun KPI importe (scripts/manage.py import-kpi)</p>{% endif %}
+
+{% if 'glpi.sync' in perms %}
+<form method="post" action="/glpi/sync" class="mb-4 flex flex-wrap items-center gap-3">
+  <button class="btn">{% if glpi_url %}Synchroniser GLPI{% else %}Synchroniser GLPI (GLPI_URL absent){% endif %}</button>
+  <small>{% if glpi_url %}{{ glpi_url }}{% else %}GLPI_URL / GLPI_TOKEN a poser dans l'environnement{% endif %}</small>
+</form>
+{% endif %}
+
+<h2>Etat des tickets (import GLPI)</h2>
+{% if tickets %}{{ table([("title","Ticket"),("person","Technicien"),("status","Etat"),("classe","Classe"),
+                         ("niveau","Niveau"),("mtta_s","MTTA","dur"),("mttr_s","MTTR","dur"),
+                         ("sla_status","SLA","sla"),("cycle_s","Cycle","dur"),("opened_at","Ouvert","dt"),
+                         ("imported_at","Sync","dt")], tickets) }}
+{% else %}<p class="empty">aucun ticket importe pour l'instant</p>{% endif %}
+
+<h2>Par personne</h2>
+{{ table([("name","Personne"),("resolved","Resolus"),("mtta_s","MTTA","dur"),("mttr_s","MTTR","dur"),
+          ("cycle_s","Cycle","dur")], by_person) }}
+
+<h2>Par categorie</h2>
+<p class="hint">Le <b>SLA</b> est synchronise sur la Categorie : la categorie du ticket est
+   rapprochee d'une classe de l'arborescence (comme chaque ticket) ; SLA tenu = part des tickets
+   resolus dans le delai (classe, niveau) de la grille <a class="mini" href="/categories">Categorie</a>.</p>
+{{ table([("category","Categorie"),("classe","Classe"),("total","Total"),("resolved","Resolus"),
+          ("mtta_s","MTTA","dur"),("mttr_s","MTTR","dur"),("cycle_s","Cycle","dur"),
+          ("sla_pct","SLA tenu","pct")], by_category) }}
+
+<h2>Par mois</h2>
+{{ table([("month","Mois","dt"),("resolved","Resolus"),("mtta_s","MTTA","dur"),("mttr_s","MTTR","dur"),
+          ("cycle_s","Cycle","dur")], monthly) }}
+
+<h1>Objectifs</h1>
+{{ table([("personne","Personne"),("period","Periode"),("title","Objectif"),("target","Cible"),
+          ("achieved","Atteint")], objectives, "objectifs") }}
+<h2>% d'atteinte par periode</h2>
+{{ table([("name","Personne"),("period","Periode"),("n","Objectifs"),("pct","% atteint")], pct) }}
+<form method="post" action="/r/objectifs/new" class="panel">{{ inputs(obj_fields, {}) }}<button class="btn-primary mt-3">enregistrer</button></form>
+{% endblock %}

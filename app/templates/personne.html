@@ -1,0 +1,64 @@
+{% extends "layout.html" %}
+{% from "_macros.html" import table, inputs %}
+{% block title %}{{ hist.name }}{% endblock %}
+{% block body %}
+<h1 class="text-xl font-semibold tracking-tight">{{ hist.name }}</h1>
+<p class="mt-1 flex flex-wrap items-center gap-x-2 text-muted">
+  <small>incidents resolus : {{ kpi.resolved or 0 }}
+    &middot; MTTA {{ kpi.mtta_s | dur }} &middot; MTTR {{ kpi.mttr_s | dur }}
+    &middot; cycle {{ kpi.cycle_s | dur }}</small>
+  {% if hist.glpi_id %}
+    <span class="rounded bg-panel px-1.5 py-0.5 font-mono text-xs text-ink">GLPI #{{ hist.glpi_id }}</span>
+    {% if glpi_url %}<a class="text-accent no-underline hover:underline" href="{{ glpi_url }}/front/user.php?id={{ hist.glpi_id }}" target="_blank" rel="noopener">ouvrir dans GLPI</a>{% endif %}
+  {% else %}
+    <span class="rounded border border-dashed border-line px-1.5 py-0.5 font-mono text-xs">identifiant GLPI non renseigne</span>
+    <a class="text-accent no-underline hover:underline" href="/r/personnes/{{ hist.person_id }}/edit">le renseigner</a>
+  {% endif %}
+</p>
+<p class="mt-3"><a class="text-accent no-underline hover:underline" href="/equipe">&larr; equipe</a></p>
+
+<h2>Affectations</h2>
+{% if assignments %}<table class="w-full border-collapse text-sm">
+<thead><tr class="bg-panel text-left"><th class="border-b border-line px-3 py-2">Projet</th><th class="border-b border-line px-3 py-2">Role</th><th class="border-b border-line px-3 py-2">Statut</th><th class="border-b border-line px-3 py-2">Avancement</th><th class="border-b border-line px-3 py-2">Echeance</th><th class="border-b border-line px-3 py-2"></th></tr></thead>
+<tbody>{% for a in assignments %}
+<tr class="border-b border-line last:border-0">
+    <td class="px-3 py-2">{{ a.project }}</td><td class="px-3 py-2">{{ a.role }}</td><td class="px-3 py-2">{{ a.status }}</td><td class="px-3 py-2">{{ a.progress }}%</td>
+    <td class="px-3 py-2">{{ a.due_date | day }}</td>
+    <td class="whitespace-nowrap px-3 py-2 text-right"><a class="btn" href="/r/affectations/{{ a.id }}/edit">modifier</a></td></tr>
+{% endfor %}</tbody></table>{% else %}<p class="empty">aucune affectation</p>{% endif %}
+
+<h2>Avancement note</h2>
+{% if assignments %}<form method="post" action="/notes" class="panel">
+  {{ inputs(assign_fields, {}) }}
+  <label class="block"><span class="text-muted">Note</span>
+    <textarea name="text" rows="2" required class="mt-1 w-full rounded-md border border-line px-3 py-2 focus:border-accent focus:outline-none"></textarea></label>
+  <label class="block"><span class="text-muted">Avancement %</span>
+    <input type="number" name="progress" min="0" max="100" step="any" class="mt-1 w-full rounded-md border border-line px-3 py-2 focus:border-accent focus:outline-none"></label>
+  <button class="btn-primary mt-3">publier</button>
+</form>{% endif %}
+
+<h2>Competences (historique date)</h2>
+{% if skills_log %}<table class="w-full border-collapse text-sm">
+<thead><tr class="bg-panel text-left"><th class="border-b border-line px-3 py-2">Categorie</th><th class="border-b border-line px-3 py-2">Niveau</th><th class="border-b border-line px-3 py-2">Avant</th><th class="border-b border-line px-3 py-2">Note</th><th class="border-b border-line px-3 py-2">Source</th><th class="border-b border-line px-3 py-2">Quand</th></tr></thead>
+<tbody>{% for s in skills_log %}
+<tr class="border-b border-line last:border-0">
+    <td class="px-3 py-2">{{ s.skill }}</td><td class="px-3 py-2">{{ s.level }}</td><td class="px-3 py-2">{{ s.previous | yn if s.previous is none else s.previous }}</td>
+    <td class="px-3 py-2">{{ s.note or '' }}</td><td class="px-3 py-2">{{ s.source }}</td><td class="px-3 py-2">{{ s.at | dt }}</td></tr>
+{% endfor %}</tbody></table>{% else %}<p class="empty">aucune evolution enregistree</p>{% endif %}
+
+<h2>Dernieres notes</h2>
+{% if notes %}<ul class="ml-4 list-disc">{% for n in notes %}<li class="mb-1"><b>{{ n.project }}</b> &mdash; {{ n.text }}
+  {% if n.progress is not none %}({{ n.progress }}%){% endif %} <small>{{ n.at | dt }}</small></li>{% endfor %}</ul>
+{% else %}<p class="empty">aucune note</p>{% endif %}
+
+<h2>Interventions support</h2>
+{% if support %}{{ table([("category","Categorie"),("title","Intervention"),("reported_at","Signale","dt"),
+                            ("resolved_at","Resolu","dt"),("solution","Solution")], support) }}
+{% else %}<p class="empty">aucune intervention support enregistree</p>{% endif %}
+
+<h2>Objectifs</h2>
+{% if objectives %}<table class="w-full border-collapse text-sm">
+<thead><tr class="bg-panel text-left"><th class="border-b border-line px-3 py-2">Periode</th><th class="border-b border-line px-3 py-2">Objectif</th><th class="border-b border-line px-3 py-2">Cible</th><th class="border-b border-line px-3 py-2">Atteint</th></tr></thead>
+<tbody>{% for o in objectives %}<tr class="border-b border-line last:border-0"><td class="px-3 py-2">{{ o.period }}</td><td class="px-3 py-2">{{ o.title }}</td><td class="px-3 py-2">{{ o.target }}</td><td class="px-3 py-2">{{ o.achieved }}</td></tr>{% endfor %}</tbody>
+</table>{% else %}<p class="empty">aucun objectif</p>{% endif %}
+{% endblock %}

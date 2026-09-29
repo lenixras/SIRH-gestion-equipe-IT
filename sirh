@@ -1,0 +1,383 @@
+#!/usr/bin/env bash
+# Mini-SIRH technique : installation, demarrage, arret.
+#   ./sirh install    installe tout (venv, Postgres Docker, schema, 1er manager) ; demande si on installe aussi GLPI 11
+#   ./sirh start      lance l'app web + API + serveur MCP
+#   ./sirh stop       l'arrete
+#   ./sirh status     etat du process
+#   ./sirh glpi       lance le simulateur GLPI (API REST v1) sur le port 8081
+#   ./sirh glpi-stop  l'arrete
+#   ./sirh glpi-real        lance le vrai GLPI 11 (MariaDB comprise) sur le port 8080
+#   ./sirh glpi-real-keys   cree l'App-Token + l'api_token et ecrit GLPI_* dans .env
+#   ./sirh glpi-real-stop   l'arrete (volumes conserves)
+#   ./sirh css       compile app/static/app.css (Tailwind) depuis app/src.css + les templates
+set -euo pipefail
+cd "$(dirname "$0")"
+
+ENV_FILE=${ENV_FILE:-.env}
+PID_FILE=logs/app.pid
+LOG_FILE=logs/app.log
+PG_CONTAINER=${PG_CONTAINER:-sirh-pg}
+PG_IMAGE=${PG_IMAGE:-postgres:17-alpine}
+PORT=${PORT:-8000}
+HOST=${HOST:-127.0.0.1}
+GLPI_CONTAINER=${GLPI_CONTAINER:-sirh-glpi}
+GLPI_IMAGE=${GLPI_IMAGE:-sirh-glpi-sim}
+GLPI_PORT=${GLPI_PORT:-8081}
+GLPI_DIR=${GLPI_DIR:-glpi}
+GLPI_COMPOSE=${GLPI_COMPOSE:-docker compose -f glpi/docker-compose.yml --env-file glpi/.env}
+GLPI_REAL_PORT=${GLPI_REAL_PORT:-8080}
+GLPI_HOST_URL=${GLPI_HOST_URL:-http://127.0.0.1:$GLPI_REAL_PORT}
+GLPI_DB_CONTAINER=${GLPI_DB_CONTAINER:-sirh-glpi-db-1}
+GLPI_WEB_CONTAINER=${GLPI_WEB_CONTAINER:-sirh-glpi-glpi-1}
+
+say()  { printf '\033[1m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[33m[!]\033[0m %s\n' "$*" >&2; }
+die()  { printf '\033[31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
+
+load_env() {
+  [ -f "$ENV_FILE" ] || die "pas de $ENV_FILE : lancer d'abord  ./sirh install"
+  set -a; . "./$ENV_FILE"; set +a
+}
+
+load_env_quiet() {  # pour stop/status : .env peut manquer, on garde les defauts
+  [ -f "$ENV_FILE" ] && { set -a; . "./$ENV_FILE"; set +a; }
+  return 0
+}
+
+# python qui execute l'app : venv si elle existe, sinon l'interpreteur systeme
+pick_python() {
+  if [ -x .venv/bin/python ]; then echo ".venv/bin/python"; else echo "python3"; fi
+}
+
+db_reachable() {
+  "$(pick_python)" - <<'EOF' >/dev/null 2>&1
+import os, psycopg
+psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=3).close()
+EOF
+}
+
+wait_for_db() {  # url, essais
+  local url=$1 tries=${2:-40}
+  for _ in $(seq "$tries"); do
+    if DATABASE_URL="$url" "$(pick_python)" -c "import os,psycopg;psycopg.connect(os.environ['DATABASE_URL'],connect_timeout=2).close()" 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------- install
+
+install() {
+  command -v python3 >/dev/null || die "python3 est requis"
+  python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' \
+    || die "python 3.10+ requis"
+  command -v curl >/dev/null || warn "curl absent : la verification de demarrage sera sautee"
+
+  say "dependances python"
+  if python3 -m venv .venv >/dev/null 2>&1 && [ -x .venv/bin/pip ]; then
+    say "  venv .venv"
+    .venv/bin/pip -q install --upgrade pip
+    .venv/bin/pip -q install -r requirements.txt
+  else
+    rm -rf .venv   # venv sans ensurepip : evite un .venv casse
+    say "  pas de module venv (python3-venv) -> installation utilisateur"
+    pip3 -q install --user --break-system-packages -r requirements.txt \
+      || die "installation pip echouee"
+  fi
+  PY=$(pick_python)
+
+  say "fichier $ENV_FILE"
+  if [ -f "$ENV_FILE" ]; then
+    load_env
+  else
+    PGUSER_DB=${PGUSER_DB:-sirh}; PG_PASSWORD=${PG_PASSWORD:-sirh}; PGPORT=${PGPORT:-55432}
+    write_env "$(gen_secret)"
+    load_env
+  fi
+
+  say "base Postgres"
+  if db_reachable; then
+    say "  joignable : $DATABASE_URL"
+  else
+    command -v docker >/dev/null || die "Postgres injoignable et docker absent : demarrer Postgres a la main puis relancer"
+    docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+    say "  conteneur $PG_CONTAINER (${PG_IMAGE}) sur le port $PGPORT"
+    docker run -d --name "$PG_CONTAINER" \
+      -e POSTGRES_USER="$PGUSER_DB" -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_DB=sirh \
+      -p "$PGPORT:5432" "$PG_IMAGE" >/dev/null
+    wait_for_db "$DATABASE_URL" 60 || die "Postgres ne demarre pas (voir : docker logs $PG_CONTAINER)"
+    for db in sirh sirh_test; do
+      docker exec "$PG_CONTAINER" psql -U "$PGUSER_DB" -d sirh -tc \
+        "SELECT 1 FROM pg_database WHERE datname='$db'" | grep -q 1 \
+        || docker exec "$PG_CONTAINER" createdb -U "$PGUSER_DB" "$db"
+    done
+    load_env
+  fi
+
+  say "schema"
+  "$PY" -c 'from app import db; db.init()'
+
+  say "compte manager"
+  if [ "$("$PY" -c 'from app import db; db.init(); print(db.one("SELECT count(*) n FROM persons")["n"])')" -gt 0 ]; then
+    say "  des comptes existent deja : creation ignoree"
+  else
+    if [ -t 0 ]; then
+      read -rp "  email du manager : " EMAIL
+      read -rsp "  mot de passe : " PW; echo
+      [ -n "${EMAIL:-}" ] || die "email obligatoire"
+    else
+      EMAIL=${ADMIN_EMAIL:-manager@$(hostname -s)}; PW=$(gen_secret)
+      warn "  identifiants generes (execution non interactive)"
+    fi
+    "$PY" -m scripts.manage create-user --name "${ADMIN_NAME:-Manager}" --email "$EMAIL" \
+      --role manager --password "$PW"
+    # l'identite des ecritures MCP est ce manager
+    sed -i "s|^MCP_ACTOR_EMAIL=.*|MCP_ACTOR_EMAIL=$EMAIL|" "$ENV_FILE"
+    [ -t 0 ] || say "  identifiants : $EMAIL / $PW"
+  fi
+
+  say "c'est pret"
+  printf '    demarrer : ./sirh start\n    arreter  : ./sirh stop\n'
+
+  # GLPI reel n'est PAS obligatoire : la plateforme tourne sans (import optionnel ou simulateur).
+  # En non-interactive (CI, scripts) on ne l'installe jamais, on le propose seulement.
+  if [ -t 0 ]; then
+    printf '\n'
+    read -rp "Installer aussi le VRAI GLPI 11 pour les tickets ? [o/N] : " REPLY || REPLY=""
+    case "${REPLY,,}" in
+      o|oui|y|yes)
+        if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then
+          warn "docker + docker compose requis pour GLPI reel : installe-les puis relance ./sirh glpi-real"
+        elif glpi_real && glpi_real_keys; then
+          say "GLPI connecte : bouton Synchroniser a l'ecran KPI, ou ./sirh glpi-real / glpi-real-keys"
+        else
+          warn "GLPI partiellement installe : relancer ./sirh glpi-real puis ./sirh glpi-real-keys"
+        fi ;;
+      *) say "GLPI non installe : ./sirh glpi-real (le vrai) ou ./sirh glpi (simulateur de test)" ;;
+    esac
+  fi
+}
+
+gen_secret() { python3 -c 'import secrets; print(secrets.token_urlsafe(24))'; }
+gen_hex() { python3 -c 'import secrets; print(secrets.token_hex(20))'; }
+
+write_env() {  # mcp_token
+  cat > "$ENV_FILE" <<EOF
+# genere par ./sirh install
+PGPORT=${PGPORT:-55432}
+DATABASE_URL=postgresql://${PGUSER_DB:-sirh}:${PG_PASSWORD:-sirh}@localhost:${PGPORT:-55432}/sirh
+TEST_DATABASE_URL=postgresql://${PGUSER_DB:-sirh}:${PG_PASSWORD:-sirh}@localhost:${PGPORT:-55432}/sirh_test
+HOST=${HOST}
+PORT=${PORT}
+# ecritures du serveur MCP depuis un chat IA : a passer a 1 pour les autoriser (audit_log)
+MCP_WRITE=${MCP_WRITE:-0}
+# jeton attendu par le client MCP (Authorization: Bearer ...)
+MCP_TOKEN=$1
+# identite qui porte les ecritures MCP
+MCP_ACTOR_EMAIL=${MCP_ACTOR_EMAIL:-manager@example.com}
+EOF
+  say "  ecrit (mode MCP_WRITE=${MCP_WRITE:-0}, jeton pose)"
+}
+
+# ---------------------------------------------------------------- start / stop
+
+app_pid() { [ -f "$PID_FILE" ] && cat "$PID_FILE" || true; }
+running() { local p; p=$(app_pid); [ -n "$p" ] && kill -0 "$p" 2>/dev/null; }
+
+start() {
+  load_env
+  PY=$(pick_python)
+  if running; then die "deja lance (pid $(app_pid)) - arreter avec ./sirh stop"; fi
+  db_reachable || die "Postgres injoignable ($DATABASE_URL) : ./sirh install, ou le conteneur est arrete"
+  if command -v curl >/dev/null && curl -s -o /dev/null -m 2 "http://$HOST:$PORT/equipe" 2>/dev/null; then
+    die "le port $PORT repond deja (autre instance en service ?) : arreter avec ./sirh stop, sinon"
+  fi
+  n=$("$PY" -c 'from app import db; db.init(); print(db.one("SELECT count(*) n FROM persons")["n"])')
+  [ "${n:-0}" -gt 0 ] || die "aucun compte en base : ./sirh install"
+  mkdir -p logs
+  say "demarrage sur http://$HOST:$PORT  (logs : $LOG_FILE)"
+  ( nohup "$PY" -m uvicorn app.main:app --host "$HOST" --port "$PORT" \
+      >"$LOG_FILE" 2>&1 </dev/null & echo $! > "$PID_FILE" )
+  command -v curl >/dev/null || return 0
+  for _ in $(seq 30); do
+    code=$(curl -s -o /dev/null -w '%{http_code}' "http://$HOST:$PORT/equipe" 2>/dev/null || true)
+    if [ "${code:-0}" -gt 0 ] 2>/dev/null; then   # 000 = pas encore en ecoute
+      say "pret (HTTP $code)"
+      [ "$code" = 401 ] && say "l'app demande les identifiants (email + mot de passe)"
+      printf '    UI      : http://%s:%s/equipe\n' "$HOST" "$PORT"
+      printf '    API     : http://%s:%s/api/kpis\n' "$HOST" "$PORT"
+      printf '    MCP     : http://%s:%s/mcp/  (Authorization: Bearer <MCP_TOKEN>)\n' "$HOST" "$PORT"
+      printf '    comptes : %s\n' "$("$PY" -c 'from app import db;
+print(", ".join(r["email"] for r in db.query("SELECT email FROM persons WHERE active ORDER BY email")))')"
+      return 0
+    fi
+    sleep 1
+  done
+  warn "pas de reponse sur le port $PORT : voir $LOG_FILE"
+  tail -n 20 "$LOG_FILE" >&2 || true
+  return 1
+}
+
+stop() {
+  load_env_quiet
+  p=$(app_pid)
+  if [ -z "$p" ] || ! kill -0 "$p" 2>/dev/null; then
+    pkill -f "uvicorn app.main:app --host $HOST --port $PORT" 2>/dev/null || true
+    rm -f "$PID_FILE"
+    say "rien a arreter"
+    return 0
+  fi
+  say "arret du pid $p"
+  kill -TERM "$p" 2>/dev/null || true
+  for _ in $(seq 15); do kill -0 "$p" 2>/dev/null || break; sleep 1; done
+  if kill -0 "$p" 2>/dev/null; then warn "toujours vivant : kill -9"; kill -9 "$p" 2>/dev/null || true; fi
+  rm -f "$PID_FILE"
+  say "arrete"
+}
+
+status() {
+  load_env_quiet
+  if running; then
+    say "en marche (pid $(app_pid)) - http://$HOST:$PORT"
+  elif command -v curl >/dev/null && curl -s -o /dev/null -m 2 "http://$HOST:$PORT/equipe" 2>/dev/null; then
+    warn "le port $PORT repond mais le pid $(app_pid 2>/dev/null || echo '?') n'est plus valide :"
+    warn "  processus etranger en service (arreter avec : pkill -f 'uvicorn app.main:app --port $PORT')"
+  else
+    say "arrete"
+  fi
+}
+
+glpi() {  # conteneur de simulation : le "helpdesk" de test du projet
+  command -v docker >/dev/null || die "docker absent : lancer 'python3 mock-glpi/app.py' directement"
+  docker rm -f "$GLPI_CONTAINER" >/dev/null 2>&1 || true
+  docker build -q -t "$GLPI_IMAGE" mock-glpi >/dev/null
+  say "GLPI simule sur http://127.0.0.1:$GLPI_PORT/glpi/apirest.php (conteneur $GLPI_CONTAINER)"
+  say "  GLPI_URL=http://127.0.0.1:$GLPI_PORT GLPI_TOKEN=simtoken GLPI_PASSWORD=simuser ./sirh start"
+  docker run -d --name "$GLPI_CONTAINER" -p "$GLPI_PORT:8081" "$GLPI_IMAGE" >/dev/null
+}
+
+glpi-stop() {
+  docker rm -f "$GLPI_CONTAINER" >/dev/null 2>&1 || true
+  say "GLPI simule arrete"
+}
+
+# ---------------------------------------------------------------- vrai GLPI
+
+env_set() {  # env_set KEY VALUE : ajoute ou remplace une ligne dans .env
+  local k=$1 v=$2
+  if grep -q "^$k=" "$ENV_FILE" 2>/dev/null; then
+    sed -i "s|^$k=.*|$k=$v|" "$ENV_FILE"
+  else
+    printf '%s=%s\n' "$k" "$v" >> "$ENV_FILE"
+  fi
+}
+
+glpi_real() {
+  command -v docker >/dev/null || die "docker absent"
+  docker compose version >/dev/null 2>&1 || die "docker compose (plugin v2) absent"
+  command -v curl >/dev/null || die "curl absent : le controle de demarrage en a besoin"
+  if [ ! -f "$GLPI_DIR/.env" ]; then
+    say "generation de $GLPI_DIR/.env"
+    printf 'GLPI_DB_PASSWORD=%s\nGLPI_DB_ROOT_PASSWORD=%s\n' "$(gen_secret)" "$(gen_secret)" > "$GLPI_DIR/.env"
+    chmod 600 "$GLPI_DIR/.env"
+  fi
+  say "demarrage du vrai GLPI (glpi/glpi:11.0.9 + mariadb:11.4)"
+  $GLPI_COMPOSE up -d
+  for _ in $(seq 90); do
+    code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' "$GLPI_HOST_URL/" 2>/dev/null || true)
+    if [ "${code:-000}" != "000" ]; then
+      say "pret (HTTP $code) - $GLPI_HOST_URL  identifiants glpi / glpi"
+      printf '    jetons API : ./sirh glpi-real-keys\n'
+      printf '    arret      : ./sirh glpi-real-stop\n'
+      return 0
+    fi
+    sleep 2
+  done
+  warn "pas de reponse sur $GLPI_HOST_URL : voir $GLPI_COMPOSE logs"
+  $GLPI_COMPOSE logs --tail 30 >&2 || true
+  return 1
+}
+
+glpi_real_stop() {
+  docker compose version >/dev/null 2>&1 || die "docker compose (plugin v2) absent"
+  $GLPI_COMPOSE down
+  say "vrai GLPI arrete (base et donnees conservees dans les volumes)"
+}
+
+# jeton = texte clair cote sirh ; GLPI 11 stocke api_token/app_token chiffres (GLPIKey, sodium).
+# On fait donc chiffrer par GLPI lui-meme plutot que de reimplementer la crypto.
+glpi_encrypt() {  # glpi_encrypt TEXTE_CLAIR -> jeton chiffre pret pour la base
+  $GLPI_COMPOSE exec -T glpi php -r '
+    define("GLPI_CONFIG_DIR", "/var/glpi/config");
+    require "/var/www/glpi/vendor/autoload.php";
+    require "/var/www/glpi/src/GLPIKey.php";
+    echo (new GLPIKey())->encrypt($argv[1]);' "$1"
+}
+
+glpi_real_keys() {
+  docker compose version >/dev/null 2>&1 || die "docker compose (plugin v2) absent"
+  [ -f "$GLPI_DIR/.env" ] || die "$GLPI_DIR/.env absent : lancer d'abord ./sirh glpi-real"
+  . "$GLPI_DIR/.env"
+  [ -n "$($GLPI_COMPOSE ps -q glpi 2>/dev/null)" ] || die "GLPI n'est pas demarre : ./sirh glpi-real"
+  DB_C=$($GLPI_COMPOSE ps -q db)
+
+  # l'API est desactivee a l'installation ; le client doit venir du pont docker, pas de 127.0.0.1
+  read -r RANGE_START RANGE_END < <(python3 -c "
+import ipaddress
+net = ipaddress.ip_network('${GLPI_API_IP_RANGE:-172.16.0.0/12}')
+print(int(net.network_address), int(net.broadcast_address))")
+
+  UT=$(gen_hex); AT=$(gen_hex)
+  EU=$(glpi_encrypt "$UT"); EA=$(glpi_encrypt "$AT")
+  [ -n "$EU" ] && [ -n "$EA" ] || die "chiffrement GLPIKey impossible (verifier que le conteneur tourne)"
+
+  say "activation de l'API REST v1 et pose des jetons"
+  printf "UPDATE glpi.glpi_configs SET value='1' WHERE name='enable_api';
+UPDATE glpi.glpi_apiclients SET name='sirh (pont docker)', ipv4_range_start=$RANGE_START,
+  ipv4_range_end=$RANGE_END, app_token='%s', app_token_date=NOW(), is_active=1 WHERE id=1;
+UPDATE glpi.glpi_users SET api_token='%s', api_token_date=NOW() WHERE id=2;
+" "$EA" "$EU" | docker exec -i "$DB_C" mariadb -uroot -p"$GLPI_DB_ROOT_PASSWORD" 2>/dev/null \
+    || die "SQL GLPI echoue (base non demarree ?)"
+  $GLPI_COMPOSE exec -T glpi php bin/console cache:clear >/dev/null 2>&1 || true
+
+  [ -f "$ENV_FILE" ] || die "$ENV_FILE absent : lancer d'abord ./sirh install"
+  env_set GLPI_URL "$GLPI_HOST_URL"
+  env_set GLPI_API_PATH "/apirest.php"
+  env_set GLPI_TOKEN "$AT"
+  env_set GLPI_PASSWORD "$UT"
+  env_set GLPI_API_IP_RANGE "${GLPI_API_IP_RANGE:-172.16.0.0/12}"
+
+  check=$(curl -s -m 10 -H 'Content-Type: application/json' -H "App-Token: $AT" \
+    -H "Authorization: user_token $UT" "$GLPI_HOST_URL/apirest.php/initSession")
+  case "$check" in
+    *session_token*) say "jetons valides (initSession OK)" ;;
+    *) warn "initSession refuse : $check" ;;
+  esac
+  say "GLPI_URL / GLPI_TOKEN / GLPI_PASSWORD ecrits dans $ENV_FILE"
+  printf '    import : GLPI_URL=%s GLPI_TOKEN=%s GLPI_PASSWORD=%s python3 -m scripts.manage import-kpi --glpi\n' \
+    "$GLPI_HOST_URL" "$AT" "$UT"
+  say "interface : $GLPI_HOST_URL  (glpi / glpi, a changer pour un vrai usage)"
+}
+
+build_css() {
+  command -v node >/dev/null || die "node absent : Tailwind se compile avec node (npm install)"
+  [ -d node_modules/tailwindcss ] || die "dependances absentes : npm install"
+  npx --no-install @tailwindcss/cli -i app/static/app.src.css -o app/static/app.css --minify
+  say "app/static/app.css regenere (l'app la sert telle quelle, aucun runtime JS)"
+}
+
+case "${1:-}" in
+  install) install ;;
+  css)     build_css ;;
+  glpi)    glpi ;;
+  glpi-stop) glpi-stop ;;
+  glpi-real) glpi_real ;;
+  glpi-real-keys) glpi_real_keys ;;
+  glpi-real-stop) glpi_real_stop ;;
+  start)   start ;;
+  stop)    stop ;;
+  status)  status ;;
+  *)       sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Erreur {{ code }}</title><link rel="stylesheet" href="/static/app.css"></head>
+<body class="grid min-h-screen place-items-center bg-page px-4 text-ink">
+<main class="w-full max-w-lg rounded-xl border border-line bg-white p-7">
+  <h1 class="text-xl font-semibold tracking-tight">Erreur {{ code }}</h1>
+  <p class="mt-2 rounded-md border border-bad/40 bg-bad-soft px-3 py-2 text-bad">{{ message }}</p>
+  {% if code == 403 %}
+  <p class="mt-4 text-muted">Droits insuffisants. Un role peut porter plus ou moins de permissions :
+     la page <a class="text-accent" href="/roles">Roles</a> dit ce que le votre autorise.</p>
+  {% endif %}
+  <p class="mt-5"><a class="text-accent no-underline hover:underline" href="/equipe">retour a l'equipe</a></p>
+</main>
+</body></html>

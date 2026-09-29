@@ -1,0 +1,41 @@
+{% extends "layout.html" %}
+{% from "_macros.html" import table, inputs %}
+{% block title %}Support{% endblock %}
+{% block body %}
+<h1>Support &mdash; interventions techniques</h1>
+<p class="hint">Tout ce qui n'est ni un projet avec echeance, ni un ticket de l'outil de tickets : panne reseau
+   globale, intervention serveur, incident d'infrastructure. Saisi a la main, ou par un agent MCP
+   (<code>log_support</code>). <b>MTTD</b> = delai avant signalement sur le terrain,
+   <b>MTTR</b> = temps d'intervention. Une fiche saisie apres coup n'a pas de MTTD mesurable.
+   La fiche choisit sa <b>classe</b> et son <b>niveau</b> dans l'arborescence ; le SLA de
+   (classe, niveau) vaut du vert si le MTTR tient, du rouge sinon (grille <a class="mini"
+   href="/categories">Categorie</a>, manager). Une fiche resolue est forcement
+   terminee (« Status » = le statut Kanban de la tache).</p>
+
+{% if kpi.total %}
+<ul class="mb-4 flex flex-wrap gap-3 p-0">
+  <li class="stat"><b>{{ kpi.total }}</b> interventions</li>
+  <li class="stat"><b>{{ kpi.resolues }}</b> resolues</li>
+  <li class="stat">{{ kpi.total - kpi.resolues }} en cours</li>
+  <li class="stat">reussite <b>{{ '%.0f'|format(100 * kpi.resolues / kpi.total) }}%</b></li>
+  <li class="stat">MTTD <b>{{ kpi.mttd_s | dur }}</b></li>
+  <li class="stat">MTTR <b>{{ kpi.mttr_s | dur }}</b></li>
+</ul>
+{% else %}<p class="empty">aucune intervention enregistree</p>{% endif %}
+
+<h2>Suivi par technicien</h2>
+<p class="hint">Chaque technicien suit ses interventions ; la plateforme suit l'equipe. Les categories
+   restent le vocabulaire des fiches (bases de connaissance), pas l'axe d'analyse.</p>
+{{ table([("personne","Technicien"),("interventions","Interventions"),("resolues","Resolues"),
+          ("succes_pct","Reussite","pct"),("mttd_s","MTTD moyen","dur"),("mttr_s","MTTR moyen","dur")], by_person) }}
+
+{% if rows %}{{ table([("reported_at","Signale","dt"),("person","Technicien"),("category_label","Classe"),
+                        ("niveau","Niveau"),("title","Intervention"),("mttd_s","MTTD","dur"),
+                        ("mttr_s","MTTR","dur"),("sla_status","SLA","sla"),("status","Statut","st"),
+                        ("solution","Solution")],
+                       rows, base="support") }}
+{% else %}<p class="empty">aucune intervention pour ce filtre</p>{% endif %}
+
+<h2>Enregistrer une intervention</h2>
+<form method="post" action="/r/support/new" class="panel">{{ inputs(fields, {'reported_at': now}) }}<button class="btn-primary mt-3">enregistrer</button></form>
+{% endblock %}

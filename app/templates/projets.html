@@ -1,0 +1,32 @@
+{% extends "layout.html" %}
+{% from "_macros.html" import table, inputs %}
+{% block title %}Projets{% endblock %}
+{% block body %}
+<div class="flex flex-wrap items-center gap-3">
+  <h1>Projets</h1>
+  {% if 'projects.manage' in perms %}<a class="btn" href="/r/projets/new">nouveau projet</a>{% endif %}
+</div>
+{{ table([("name","Projet"),("status","Statut"),("start_date","Debut","day"),("due_date","Echeance","day"),
+          ("description","Description")], projects, "projets") }}
+
+<h2>Jalons en retard</h2>
+{% if late %}{{ table([("name","Projet"),("due_date","Echeance"),("days_late","Jours de retard"),
+                      ("status","Statut")], late) }}
+{% else %}<p class="empty">aucun jalon en retard</p>{% endif %}
+
+<h2>Affectations</h2>
+{% if 'assignments.manage' in perms %}<p><a class="btn" href="/r/affectations/new">nouvelle affectation</a></p>{% endif %}
+{{ table([("projet","Projet"),("personne","Personne"),("role","Role"),("status","Statut"),
+          ("progress","Avancement"),("due_date","Echeance","day"),("en_retard","En retard")],
+         assignments, "affectations", "/personnes") }}
+
+{% if 'assignments.manage' in perms %}
+<h2>Ajouter une affectation</h2>
+<form method="post" action="/r/affectations/new" class="panel">{{ inputs(af_fields, {}) }}<button class="btn-primary mt-3">enregistrer</button></form>
+{% endif %}
+
+<h2>Qui est sur quoi</h2>
+{{ table([("person","Personne"),("project","Projet"),("role","Role"),("status","Statut"),
+          ("progress","Avancement"),("due_date","Echeance","day"),("overdue","En retard"),
+          ("last_note_at","Derniere note","dt")], open) }}
+{% endblock %}

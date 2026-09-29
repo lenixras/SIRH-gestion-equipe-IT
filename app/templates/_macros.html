@@ -1,0 +1,68 @@
+{% macro table(cols, rows, base='', link='') %}
+<div class="overflow-x-auto rounded-lg border border-line bg-white">
+<table class="w-full border-collapse text-sm">
+  <thead><tr class="bg-panel text-left">{% for c in cols %}<th class="border-b border-line px-3 py-2 font-semibold">{{ c[1] }}</th>{% endfor %}{% if base %}<th class="border-b border-line px-3 py-2"></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr class="border-b border-line last:border-0 even:bg-page/60">
+      {% for c in cols %}
+        {% set k, l = c[0], c[1] %}
+        {% set f = c[2] if c | length > 2 else '' %}
+        <td class="px-3 py-2 align-top">
+          {%- if f == 'dur' -%}{{ r[k] | dur }}
+          {%- elif f == 'dt' -%}{{ r[k] | dt }}
+          {%- elif f == 'day' -%}{{ r[k] | day }}
+          {%- elif f == 'pct' -%}{{ r[k] | pct }}
+          {%- elif f == 'sla' -%}{% if r[k] == 'ok' %}<span class="text-good">🟢 sla tenu</span>
+                                  {%- elif r[k] == 'depasse' %}<span class="text-bad">🔴 sla depasse</span>
+                                  {%- elif r[k] == 'dans_delai' %}<span class="text-accent">🔵 dans les temps</span>
+                                  {%- else -%}<span class="text-muted">&mdash;</span>{% endif %}
+          {%- elif f == 'st' -%}{% if r[k] == 'done' %}<span class="rounded border border-good/40 bg-good-soft px-1.5 py-0.5 text-xs text-good">Termine</span>
+                                  {%- elif r[k] == 'blocked' %}<span class="rounded border border-bad/40 bg-bad-soft px-1.5 py-0.5 text-xs text-bad">Bloque</span>
+                                  {%- elif r[k] == 'escalade' %}<span class="rounded border border-bad/40 bg-bad-soft px-1.5 py-0.5 text-xs text-bad">Bloque &mdash; Escalade</span>
+                                  {%- elif r[k] == 'in_progress' %}<span class="rounded border border-line bg-accent-soft px-1.5 py-0.5 text-xs text-accent">En cours</span>
+                                  {%- else %}<span class="rounded border border-line bg-white px-1.5 py-0.5 text-xs text-muted">A faire</span>{% endif %}
+          {%- elif f == 'couleur' -%}{% if r[k] %}<span class="inline-block h-3 w-3 rounded-full align-middle" style="background: {{ r[k] }}"></span> <span class="font-mono text-xs text-muted">{{ r[k] }}</span>{% else %}<span class="text-muted">&mdash;</span>{% endif %}
+          {%- elif r[k] is boolean -%}{{ r[k] | yn }}
+          {%- elif r[k] is none -%}<span class="text-muted">&mdash;</span>
+          {%- else -%}{{ r[k] }}{%- endif -%}</td>
+      {% endfor %}
+      {% if base %}
+      <td class="whitespace-nowrap px-3 py-2 text-right">
+        {% if link %}<a href="{{ link }}/{{ r.id }}" class="text-accent no-underline hover:underline">fiche</a>{% endif %}
+        <a class="btn" href="/r/{{ base }}/{{ r.id }}/edit">modifier</a>
+        {% if r.id %}<form method="post" action="/r/{{ base }}/{{ r.id }}/delete" class="inline"><button class="text-bad hover:underline">supprimer</button></form>{% endif %}
+      </td>{% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="{{ cols | length }}" class="px-3 py-4 text-muted italic">aucune donnee</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
+
+{% macro inputs(spec, values) %}
+{% for name, label, kind, required, opts in spec %}
+  <label class="block"><span class="text-muted">{{ label }}{% if required %} <b class="text-bad">*</b>{% endif %}</span>
+  {% if kind == 'select' %}
+    <select name="{{ name }}" {% if required %}required{% endif %}
+            class="mt-1 w-full rounded-md border border-line bg-white px-3 py-2 focus:border-accent focus:outline-none">
+      <option value="">--</option>
+      {% for o in opts %}
+        {% set v = o.id if o is mapping else o[0] %}
+        {% set t = o.name if o is mapping else o[1] %}
+        <option value="{{ v }}" {% if values[name] is defined and values[name] | string == v | string %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+  {% elif kind == 'textarea' %}
+    <textarea name="{{ name }}" rows="3" class="mt-1 w-full rounded-md border border-line bg-white px-3 py-2 focus:border-accent focus:outline-none">{{ values[name] if values[name] is defined and values[name] else '' }}</textarea>
+  {% else %}
+    {% set val = values[name] if values[name] is defined and values[name] is not none else '' %}
+    <input type="{{ kind }}" name="{{ name }}" value="{{ val | dtl if kind == 'datetime-local' else val }}"
+           class="mt-1 w-full rounded-md border border-line bg-white px-3 py-2 focus:border-accent focus:outline-none"
+           {% if kind == 'number' %}step="any"{% endif %} {% if required %}required{% endif %}>
+  {% endif %}
+  </label>
+{% endfor %}
+{% endmacro %}

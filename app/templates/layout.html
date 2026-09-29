@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SIRH equipe{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="min-h-screen bg-page text-ink text-sm/1.45 antialiased">
+<header class="sticky top-0 z-10 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line bg-white/90 px-5 py-3 backdrop-blur">
+  <a href="/equipe" class="text-base font-semibold tracking-tight">Mini-SIRH equipe</a>
+  <nav class="flex flex-wrap items-center gap-1 text-accent">
+    <a href="/competences" class="rounded-md px-2.5 py-1 hover:bg-accent-soft {{ 'bg-accent-soft font-semibold' if request.path.startswith('/competences') or request.path.startswith('/dashboard') else '' }}">Dashboard competence</a>
+    <a href="/equipe" class="rounded-md px-2.5 py-1 hover:bg-accent-soft {{ 'bg-accent-soft font-semibold' if request.path in ('/', '/equipe') else '' }}">Equipe</a>
+    <a href="/projets" class="rounded-md px-2.5 py-1 hover:bg-accent-soft {{ 'bg-accent-soft font-semibold' if request.path.startswith('/projets') else '' }}">Projets</a>
+    <a href="/kanban" class="rounded-md px-2.5 py-1 hover:bg-accent-soft {{ 'bg-accent-soft font-semibold' if request.path.startswith('/kanban') else '' }}">Kanban</a>
+    <a href="/support" class="rounded-md px-2.5 py-1 hover:bg-accent-soft {{ 'bg-accent-soft font-semibold' if request.path.startswith('/support') else '' }}">Support</a>
+    <a href="/kpi" class="rounded-md px-2.5 py-1 hover:bg-accent-soft {{ 'bg-accent-soft font-semibold' if request.path.startswith('/kpi') else '' }}">Ticketing Result</a>
+    <a href="/roles" class="rounded-md px-2.5 py-1 hover:bg-accent-soft {{ 'bg-accent-soft font-semibold' if request.path.startswith('/roles') else '' }}">Roles</a>
+    {% if 'data.manage' in perms %}<a href="/categories" class="rounded-md px-2.5 py-1 hover:bg-accent-soft {{ 'bg-accent-soft font-semibold' if request.path.startswith('/categories') else '' }}">Categorie</a>{% endif %}
+  </nav>
+  <div class="ml-auto flex items-center gap-3 text-muted">
+    <span>{{ actor.name }} &middot; <span class="rounded bg-panel px-1.5 py-0.5 font-mono text-xs text-ink">{{ actor.role }}</span></span>
+    <a href="/logout" class="rounded-md border border-line px-2.5 py-1 text-accent no-underline hover:bg-accent-soft">deconnexion</a>
+  </div>
+</header>
+{% if err %}<p class="mx-5 mt-3 rounded-md border border-bad/40 bg-bad-soft px-3 py-2 text-bad">{{ err }}</p>{% endif %}
+{% if msg %}<p class="mx-5 mt-3 rounded-md border border-good/40 bg-good-soft px-3 py-2 text-good">{{ msg }}</p>{% endif %}
+<main class="mx-auto max-w-7xl px-5 py-6">{% block body %}{% endblock %}</main>
+</body>
+</html>

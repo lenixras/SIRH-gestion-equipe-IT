@@ -1,0 +1,59 @@
+{% extends "layout.html" %}
+{% block title %}Roles &amp; permissions{% endblock %}
+{% block body %}
+<h1 class="text-xl font-semibold tracking-tight">Roles &amp; permissions</h1>
+<p class="mt-1 max-w-3xl text-muted">
+  Un role est porte par chaque personne ; lui sont accordees des permissions nommees.
+  Les regles de propriete (un technicien n'ecrit que sur sa propre fiche) restent liees a la ligne visee
+  et ne se desactivent pas ici.</p>
+
+{% if not perms.__contains__('roles.manage') %}
+<p class="mt-4 rounded-md border border-line bg-panel px-3 py-2 text-muted">Lecture seule : la gestion des roles demande la permission <code>roles.manage</code>.</p>
+{% else %}
+<form method="post" action="/roles/new" class="mt-5 flex max-w-xl flex-wrap items-end gap-3 rounded-lg border border-line bg-white p-4">
+  <label class="block grow"><span class="text-muted">Nom du role</span>
+    <input name="name" required placeholder="chef-de-projet"
+           class="mt-1 w-full rounded-md border border-line px-3 py-2 focus:border-accent focus:outline-none"></label>
+  <label class="block grow"><span class="text-muted">Description</span>
+    <input name="description" placeholder="ce que ce role peut faire"
+           class="mt-1 w-full rounded-md border border-line px-3 py-2 focus:border-accent focus:outline-none"></label>
+  <button class="rounded-md bg-accent px-3 py-2 font-medium text-white hover:opacity-90">creer</button>
+</form>
+{% endif %}
+
+<div class="mt-6 grid gap-4 lg:grid-cols-2">
+{% for r in roles %}
+  <section class="rounded-lg border border-line bg-white p-4">
+    <div class="flex items-baseline gap-2">
+      <h2 class="font-mono text-sm font-semibold">{{ r.name }}</h2>
+      <span class="text-xs text-muted">{{ r.users }} personne(s)</span>
+    </div>
+    {% if r.description %}<p class="mt-1 text-muted">{{ r.description }}</p>{% endif %}
+    {% if perms.__contains__('roles.manage') %}
+    <form method="post" action="/roles/{{ r.name }}/perms" class="mt-3 grid gap-1.5">
+      {% for p in all_perms %}
+      <label class="flex items-start gap-2 text-sm">
+        <input type="checkbox" name="perm" value="{{ p.key }}" class="mt-0.5 accent-accent"
+               {{ 'checked' if p.key in r.perms }}>
+        <span><code class="text-accent">{{ p.key }}</code> &mdash; <span class="text-muted">{{ p.label }}</span></span>
+      </label>
+      {% endfor %}
+      <div class="mt-2 flex items-center gap-3">
+        <button class="rounded-md border border-line px-3 py-1.5 text-accent hover:bg-accent-soft">enregistrer</button>
+        <span class="text-xs text-muted">{{ r.perms | length if r.perms else 0 }} permission(s)</span>
+      </div>
+    </form>
+    {% else %}
+    <ul class="mt-3 grid gap-1">
+      {% for k in r.perms or [] %}<li><code class="text-accent">{{ k }}</code></li>{% else %}<li class="text-muted">aucune permission</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if perms.__contains__('roles.manage') and not r.users %}
+    <form method="post" action="/roles/{{ r.name }}/delete" class="mt-3 border-t border-line pt-3">
+      <button class="text-bad hover:underline">supprimer ce role</button>
+    </form>
+    {% endif %}
+  </section>
+{% endfor %}
+</div>
+{% endblock %}

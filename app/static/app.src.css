@@ -1,0 +1,97 @@
+/* Source Tailwind compilee vers app.css par `./sirh css` (npx @tailwindcss/cli).
+   Aucun CDN, aucun runtime JS : le CSS est servi par FastAPI comme avant. */
+@import "tailwindcss";
+
+/* Les templates Jinja sont la source des classes ; en dev Tailwind scanne aussi le projet. */
+@source "../templates";
+
+@theme {
+  --color-ink: #1c2024;
+  --color-muted: #6b7480;
+  --color-line: #dfe3e8;
+  --color-accent: #2f5d8a;
+  --color-accent-soft: #eef3f8;
+  --color-bad: #a12b2b;
+  --color-bad-soft: #fdecec;
+  --color-good: #1c6b3d;
+  --color-good-soft: #e9f7ef;
+  --color-panel: #f2f4f7;
+  --color-page: #fbfcfd;
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Classes reutilisees par les templates : une definition, pas une repetition dans 8 fichiers. */
+@layer components {
+  /* Rythme vertical : preflight annule les marges des titres, on rend l'espace entre texte et
+     tableau (h1/h2 de section, hint au-dessus d'un tableau, titres encadres des panels). */
+  main > h1 { @apply mt-8 mb-3 text-xl font-semibold tracking-tight; }
+  main > h2 { @apply mt-8 mb-2 text-base font-semibold; }
+  main > h1:first-child, main > h2:first-child { @apply mt-0; }
+  main > .hint { @apply mb-4; }
+  .panel h2 { @apply mb-2 text-base font-semibold; }
+  .table-block { @apply mt-3 mb-6; }
+  .btn {
+    @apply inline-block rounded-md border border-line bg-white px-3 py-1.5 text-accent no-underline
+           hover:bg-accent-soft disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply inline-block rounded-md bg-accent px-3 py-2 font-medium text-white hover:opacity-90;
+  }
+  .panel {
+    @apply my-3 max-w-3xl rounded-lg border border-line bg-white p-4;
+  }
+  .stat {
+    @apply rounded-lg border border-line bg-white px-3.5 py-2.5;
+  }
+  .hint {
+    @apply mt-1 max-w-3xl text-xs text-muted;
+  }
+  .empty {
+    @apply text-muted italic;
+  }
+  .mini {
+    @apply text-xs text-accent no-underline hover:underline;
+  }
+
+  /* Kanban : .col / .card sont aussi des points d'accroche pour le drag & drop natif. */
+  .board {
+    @apply grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-4;
+  }
+  .col {
+    @apply min-h-32 rounded-lg border border-line bg-panel p-2;
+  }
+  .col h2 {
+    @apply mb-2 flex text-xs font-semibold uppercase tracking-wide text-muted;
+  }
+  .count {
+    @apply ml-auto rounded-full border border-line bg-white px-1.5 text-ink;
+  }
+  .stack {
+    @apply flex min-h-10 flex-col gap-2;
+  }
+  .card {
+    @apply relative cursor-grab rounded-md border border-line border-l-[3px] border-l-accent bg-white p-2
+           active:cursor-grabbing;
+  }
+  .card small {
+    @apply block;
+  }
+  .card .pv {
+    @apply absolute right-2 top-2 text-xs text-muted;
+  }
+  .bar {
+    @apply my-1.5 h-0.5 bg-line;
+  }
+  .bar i {
+    @apply block h-full bg-accent;
+  }
+  .late {
+    @apply not-italic text-bad;
+  }
+  .card form.move {
+    @apply mt-1.5;
+  }
+  .card select {
+    @apply w-full rounded border border-line bg-white px-1 py-0.5 text-xs;
+  }
+}

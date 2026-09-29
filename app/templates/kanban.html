@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+{% block title %}Kanban{% endblock %}
+{% block body %}
+<h1>Kanban des affectations</h1>
+<p class="hint">Glisser une carte entre les colonnes, ou choisir un statut puis valider.
+   Le deplacement passe par la meme couche d'ecriture que l'edition (droits + audit).</p>
+
+<div class="board" id="board">
+  {% for key, label in cols %}
+  <section class="col" data-status="{{ key }}">
+    <h2>{{ label }} <span class="count">{{ cards | selectattr('status', 'equalto', key) | list | length }}</span></h2>
+    <div class="stack">
+      {% for c in cards if c.status == key %}
+      <article class="card" draggable="true" data-id="{{ c.id }}" style="border-left-color: {{ c.couleur }}">
+        <span class="pv">{{ c.progress }}%</span>
+        <b>{{ c.project }}</b>
+        <small>{{ c.role }} &middot; {{ c.person }}</small>
+        <div class="bar"><i style="width: {{ c.progress }}%"></i></div>
+        <small>{% if c.due_date %}echeance {{ c.due_date | day }}{% else %}sans echeance{% endif %}
+          {%- if c.overdue %} <em class="late">en retard</em>{% endif %}</small>
+        <form method="post" action="/kanban/{{ c.id }}" class="move">
+          <select name="status" onchange="this.form.submit()" aria-label="Statut de {{ c.project }}">
+            {% for k, l in cols %}<option value="{{ k }}" {% if k == c.status %}selected{% endif %}>{{ l }}</option>{% endfor %}
+          </select>
+        </form>
+        <a class="mini" href="/r/affectations/{{ c.id }}/edit">details</a>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+
+<script>
+  // drag & drop natif : on depose -> on met a jour le <select> de la carte -> son form part tout seul.
+  let carte = null;
+  board.addEventListener('dragstart', e => { carte = e.target.closest('.card'); e.dataTransfer.effectAllowed = 'move'; });
+  board.addEventListener('dragover', e => { if (carte) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } });
+  board.addEventListener('drop', e => {
+    const col = e.target.closest('.col');
+    if (!carte || !col) return;
+    e.preventDefault();
+    const sel = carte.querySelector('select');
+    if (sel.value === col.dataset.status) return;
+    sel.value = col.dataset.status;
+    sel.form.submit();
+  });
+</script>
+{% endblock %}

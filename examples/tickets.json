@@ -1,0 +1,11 @@
+[
+  {"id": "101", "person": "Priya", "category": "incident", "priority": 3,
+   "opened_at": "2026-09-20T08:05:00+00:00", "taken_at": "2026-09-20T08:35:00+00:00",
+   "solved_at": "2026-09-20T09:50:00+00:00"},
+  {"id": "102", "person": "Priya", "category": "incident", "priority": 2,
+   "opened_at": "2026-09-24T14:00:00+00:00", "taken_at": "2026-09-24T14:10:00+00:00",
+   "solved_at": "2026-09-24T16:00:00+00:00"},
+  {"id": "103", "person": "Marc", "category": "request", "priority": 4,
+   "opened_at": "2026-09-25T09:00:00+00:00", "takeintoaccount_delay_stat": 1800,
+   "solutiontime": 7200}
+]

@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+{% from "_macros.html" import table %}
+{% block title %}Equipe{% endblock %}
+{% block body %}
+<div class="flex flex-wrap items-center gap-3">
+  <h1 class="text-xl font-semibold tracking-tight">Equipe</h1>
+  {% if 'persons.manage' in perms %}
+  <a class="btn" href="/r/personnes/new">nouvelle personne</a>
+  <a class="text-xs text-muted" href="/roles">roles &amp; permissions</a>
+  {% endif %}
+</div>
+<p class="hint">L'identifiant GLPI est l'id du technicien dans l'outil de tickets : il attribue les tickets
+   importes a la bonne personne, meme en cas d'homonymes. Renseignable a la creation, completable ensuite.</p>
+{{ table([("name","Nom"),("title","Poste"),("role","Role"),("glpi_id","ID GLPI"),("email","Email"),("active","Actif")],
+         people, "personnes", "/personnes") }}
+{% endblock %}

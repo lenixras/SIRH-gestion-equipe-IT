@@ -1,0 +1,48 @@
+{% extends "layout.html" %}
+{% from "_macros.html" import inputs %}
+{% block title %}Categorie (arborescence){% endblock %}
+{% block body %}
+<h1>Arborescence des taches &mdash; Type / Classe / Niveau / SLA</h1>
+<p class="hint">La taxonomie commune a toutes les taches (Support, Ticketing, Projets). Chaque ligne
+   definit le <b>SLA</b> acceptable d'une tache de cette classe a ce niveau : le MTTR d'une fiche
+   close se compare a ce seuil (vert tenu, rouge depasse). Re-saisir une combinaison existante
+   recalibre simplement son SLA. La <b>couleur</b> met en evidence la classe (Kanban, tableau de
+   bord, arborescence). Une ligne referencee par des fiches ne se supprime pas.</p>
+
+<h2>Definir un niveau</h2>
+<p class="hint">Exemples du besoin : Intervention / Coupure reseau utilisateur / N1 / 30 min ;
+   Administration / Serveur / N2 / 60 min ; Administration / Base de donnees / N3 / 120 min ;
+   Deploiement / Application / N2 / 90 min. Les categories syncronisees depuis GLPI arrivent ici
+   comme classes (SLA 30/60/120 par defaut, couleur GLPI) : recalibrez-la librement.</p>
+<form method="post" action="/categories" class="panel">{{ inputs(fields, {}) }}<button class="btn-primary mt-3">enregistrer</button></form>
+
+<h2>Grille actuelle</h2>
+{% if rows %}
+<div class="overflow-x-auto rounded-lg border border-line bg-white">
+<table class="w-full border-collapse text-sm">
+  <thead><tr class="bg-panel text-left">
+    <th class="border-b border-line px-3 py-2">Type</th><th class="border-b border-line px-3 py-2">Classe</th>
+    <th class="border-b border-line px-3 py-2">Niveau</th><th class="border-b border-line px-3 py-2">SLA</th>
+    <th class="border-b border-line px-3 py-2">Couleur</th><th class="border-b border-line px-3 py-2"></th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr class="border-b border-line last:border-0 even:bg-page/60">
+      <td class="px-3 py-2">{{ r.type }}</td>
+      <td class="px-3 py-2">{{ r.classe }}</td>
+      <td class="px-3 py-2 font-mono text-xs">{{ r.niveau }}</td>
+      <td class="px-3 py-2">{{ r.sla_minutes }} min</td>
+      <td class="px-3 py-2">{% if r.couleur %}<span class="inline-block h-3 w-3 rounded-full align-middle" style="background: {{ r.couleur }}"></span> <span class="font-mono text-xs text-muted">{{ r.couleur }}</span>{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
+      <td class="whitespace-nowrap px-3 py-2 text-right">
+        <form method="post" action="/categories/{{ r.key }}/delete" class="inline"
+              onsubmit="return confirm('Retirer « {{ r.classe }} / {{ r.niveau }} » de la grille ?')">
+          <button class="text-bad hover:underline{% if r.key in used %} disabled text-muted{% endif %}"
+                  {% if r.key in used %}disabled title="deja utilisee par des fiches"{% endif %}>supprimer</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}<p class="empty">aucune ligne : la grille est vide, definissez-en une ci-dessus</p>{% endif %}
+{% endblock %}

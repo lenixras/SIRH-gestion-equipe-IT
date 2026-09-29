@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connexion &mdash; SIRH equipe</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="grid min-h-screen place-items-center bg-page px-4 text-ink">
+<main class="w-full max-w-sm rounded-xl border border-line bg-white p-7 shadow-sm">
+  <h1 class="text-lg font-semibold tracking-tight">Mini-SIRH equipe</h1>
+  <p class="mt-1 text-muted">Connexion</p>
+  {% if err %}<p class="mt-4 rounded-md border border-bad/40 bg-bad-soft px-3 py-2 text-bad">{{ err }}</p>{% endif %}
+  <form method="post" action="/login" class="mt-5 grid gap-3">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label class="block"><span class="text-muted">Email</span>
+      <input name="email" type="email" required autofocus autocomplete="username"
+             class="mt-1 w-full rounded-md border border-line px-3 py-2 focus:border-accent focus:outline-none"></label>
+    <label class="block"><span class="text-muted">Mot de passe</span>
+      <input name="password" type="password" required autocomplete="current-password"
+             class="mt-1 w-full rounded-md border border-line px-3 py-2 focus:border-accent focus:outline-none"></label>
+    <button class="mt-1 rounded-md bg-accent px-3 py-2 font-medium text-white hover:opacity-90">Se connecter</button>
+  </form>
+  <p class="mt-5 border-t border-line pt-4 text-xs text-muted">
+    L'API et le MCP restent accessibles en HTTP Basic avec les memes identifiants.</p>
+</main>
+</body>
+</html>
