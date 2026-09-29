@@ -2,7 +2,7 @@
 # Mini-SIRH technique : installation, demarrage, arret.
 #   ./sirh install    installe tout (venv, Postgres Docker, schema, 1er manager) ; demande si on installe aussi GLPI 11
 #   ./sirh start      lance l'app web + API + serveur MCP
-#   ./sirh stop       l'arrete
+#   ./sirh stop       l'arrete (et la base sirh-pg : donnees conservees)
 #   ./sirh status     etat du process
 #   ./sirh glpi       lance le simulateur GLPI (API REST v1) sur le port 8081
 #   ./sirh glpi-stop  l'arrete
@@ -190,6 +190,13 @@ start() {
   load_env
   PY=$(pick_python)
   if running; then die "deja lance (pid $(app_pid)) - arreter avec ./sirh stop"; fi
+  if ! db_reachable && command -v docker >/dev/null \
+     && [ "$(docker ps -aq --filter name=^${PG_CONTAINER}$)" ] \
+     && [ -z "$(docker ps -q --filter name=^${PG_CONTAINER}$)" ]; then
+    say "conteneur $PG_CONTAINER arrete : je le relance"
+    docker start "$PG_CONTAINER" >/dev/null
+    wait_for_db "$DATABASE_URL" 30 || die "Postgres ne demarre pas (voir : docker logs $PG_CONTAINER)"
+  fi
   db_reachable || die "Postgres injoignable ($DATABASE_URL) : ./sirh install, ou le conteneur est arrete"
   if command -v curl >/dev/null && curl -s -o /dev/null -m 2 "http://$HOST:$PORT/equipe" 2>/dev/null; then
     die "le port $PORT repond deja (autre instance en service ?) : arreter avec ./sirh stop, sinon"
@@ -235,6 +242,11 @@ stop() {
   if kill -0 "$p" 2>/dev/null; then warn "toujours vivant : kill -9"; kill -9 "$p" 2>/dev/null || true; fi
   rm -f "$PID_FILE"
   say "arrete"
+
+  # la base s'arrete avec l'app : docker stop preserve les donnees (relance par ./sirh start)
+  if command -v docker >/dev/null && [ -n "$(docker ps -q --filter name=^${PG_CONTAINER}$)" ]; then
+    docker stop "$PG_CONTAINER" >/dev/null && say "base $PG_CONTAINER arrete (donnees conservees)"
+  fi
 }
 
 status() {
