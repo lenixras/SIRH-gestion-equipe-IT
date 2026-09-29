@@ -2,7 +2,67 @@
 
 Un petit site pour piloter une équipe technique : qui fait quoi, ce que chacun traite vraiment
 (interventions, tickets, projets), si les délais sont tenus, et où en sont les projets.
+
+> **La plateforme est prête pour l'IA.** Un serveur **MCP** est intégré : vos assistants
+> (Claude, Cursor, opencode, n8n…) interrogent et nourrissent l'équipe **directement** — mêmes
+> écrans, mêmes droits, même journal d'audit. Voir
+> [Connecter un assistant IA (MCP)](#connecter-un-assistant-ia-mcp).
+
 Vous n'avez rien à installer sur votre poste : on y va avec un lien, on se connecte, c'est tout.
+
+## Connecter un assistant IA (MCP)
+
+Le serveur MCP tourne sur le **même backend** que le site, monté sur `http://localhost:8000/mcp/`
+(transport streamable HTTP). Il expose **16 outils** ; les assistants n'ont aucun accès SQL :
+ils passent par les mêmes vues et la même couche d'écriture que l'écran.
+
+| Famille | Outils | À quoi ça sert dans un chat IA |
+|---|---|---|
+| État de l'équipe | `who_is_on`, `list_persons`, `get_person_history`, `list_projects`, `get_project` | « Qui est sur quoi cette semaine ? », « Où en est Priya ? » |
+| Activité | `list_support`, `log_support` | déclarer un dépannage de vive voix, avec SLA et statut (dont Escalade) |
+| Analyse | `get_kpis`, `get_person_analysis` | la **même requête que le Dashboard compétence** : réussite, % SLA, difficulté, escalades, filtres `person` / `period` / `since`–`until` |
+| Projets & pilotage | `assign_task`, `log_progress`, `update_assignment`, `get_objectives`, `set_objective`, `set_skill`, `get_skills` | affecter une carte, noter l'avancement, lire/poser un objectif |
+
+**Configuration client** (opencode, Claude Desktop, Cursor…) — le jeton est dans `.env` (`MCP_TOKEN`) :
+
+```json
+{
+  "mcpServers": {
+    "sirh-equipe": {
+      "url": "http://localhost:8000/mcp/",
+      "headers": { "Authorization": "Bearer <MCP_TOKEN>" }
+    }
+  }
+}
+```
+
+**Lecture seule par défaut.** Les écritures via MCP ne s'ouvrent que volontairement :
+
+```bash
+MCP_WRITE=1 ./sirh start    # les ecritures passent par les memes droits (MCP_ACTOR_EMAIL) et sont auditees
+```
+
+Garanties : chaque écriture MCP atterrit dans `audit_log` (comme l'écran et l'API) ; les droits
+sont vérifiés côté serveur ; `set_skill`/`get_skills` lisent la grille manuelle 1-5 (sans écran
+dédié), `get_person_analysis` est l'analyse réelle du dashboard — un assistant ne peut pas voir
+plus ou autrement que le manager.
+
+## Stack technique
+
+| Couche | Choix | Pourquoi |
+|---|---|---|
+| Backend | **Python 3.10+ / FastAPI** (uvicorn) | un seul process : écrans + API JSON + MCP |
+| Écrans | **Jinja** servis par FastAPI | pas de SPA, pas de build JS côté navigateur |
+| Style | **Tailwind CSS** compilé (`app/static/app.css`), zéro CDN | l'app reste utilisable hors ligne |
+| Graphiques | **Chart.js vendorisé** (`app/static/chart.umd.js`) | idem : pas de dépendance externe au runtime |
+| Base | **PostgreSQL 17** (conteneur `sirh-pg`), driver **psycopg 3** | logique metier en SQL : vues `v_*`, fonction `f_person_analysis`, SLA |
+| Temps réel | **NOTIFY + SSE** (`GET /events`) | l'écran se recharge dès qu'une donnée change, quelle que soit la porte (UI, API, MCP) |
+| IA | **FastMCP** monté sur `/mcp/` (Bearer) | 16 outils, mêmes droits que l'UI, gate `MCP_WRITE` |
+| Tickets | **GLPI 11 API REST v1** (+ simulateur stdlib pour tests/démo) | import idempotent, MTTA/MTTR/cycles en SQL |
+| Auth | pbkdf2 stdlib, cookie de session 12 h + HTTP Basic (API/MCP/tests) | déconnexion réelle, RBAC par permissions |
+| Audit | `audit_log` unique par écriture | toute modification est tracée, quelle que soit la porte |
+| Tests | **pytest** (62) contre base `sirh_test` + simulateur GLPI réel lancé | l'import GLPI est testé de bout en bout |
+| Outils | bash `./sirh`, Docker (Postgres, GLPI), node/npm (compilation CSS seule) | installation en une commande |
 
 ## À quoi ça sert
 
@@ -99,13 +159,12 @@ Sans GLPI sous la main (démo, tests), le simulateur joue le rôle du helpdesk :
 
 ## Pour aller plus loin (techniciens d'infra)
 
-- L'application expose aussi une **API JSON** (mêmes accès, mot de passe en HTTP Basic) et un
-  **serveur MCP** (`/mcp/`, 16 outils) pour les assistants connectés — mêmes droits et même
-  journal d'audit que les écrans ; les écritures n'y sont ouvertes que si `MCP_WRITE=1`.
-- `GET /api/competences/analyse` renvoie en JSON exactement le tableau du Dashboard compétence.
-- Développement, simulateur GLPI, tests, configuration : voir le fichier `14-pilotage-equipe-mcp.md`
-  et les sections techniques de l'historique — `python3 -m pytest tests -q` (61 tests) valide
-  l'ensemble ; le CSS se recompille avec `./sirh css` après une modification de gabarit.
+- L'**API JSON** (mêmes accès que les écrans, mot de passe en HTTP Basic) reprend les données des
+  vues : `GET /api/competences/analyse` renvoie en JSON exactement le tableau du Dashboard compétence.
+  Le **MCP**, lui, est décrit plus haut ([Connecter un assistant IA](#connecter-un-assistant-ia-mcp)).
+- Développement, simulateur GLPI, tests, configuration : voir le fichier `14-pilotage-equipe-mcp.md` —
+  `python3 -m pytest tests -q` (62 tests) valide l'ensemble ; le CSS se recompille avec `./sirh css`
+  après une modification de gabarit.
 
 ## Hors périmètre
 
