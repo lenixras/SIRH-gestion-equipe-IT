@@ -170,3 +170,7 @@ Sans GLPI sous la main (démo, tests), le simulateur joue le rôle du helpdesk :
 
 Ce n'est pas un outil de ticketing (le helpdesk reste GLPI, on n'importe que ses chiffres),
 ni de la paie, ni des congés, ni un Gantt complet.
+
+## Licence
+
+MIT — voir `LICENSE`.
