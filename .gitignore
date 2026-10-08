@@ -16,6 +16,3 @@ glpi/.env
 # build CSS (Tailwind) : installe via `npm install`, jamais versionne
 node_modules/
 
-# outils agents / graphe de connaissance local
-.opencode/
-graphify-out/
